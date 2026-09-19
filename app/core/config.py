@@ -13,7 +13,9 @@ class Settings(BaseSettings):
     QDRANT_URL: str = "http://localhost:6333"
     REDIS_URL: str = "redis://localhost:6379/0"
 
-    JWT_SECRET_KEY: str = "change-me"
+    # No default: a forgeable, publicly-known secret would let anyone mint valid
+    # tokens. Must be set via env/.env, or Settings() raises at startup.
+    JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 7

@@ -1,3 +1,4 @@
+import os
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
 
@@ -5,11 +6,13 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.core.security import hash_password
-from app.db.base import Base
-from app.db.postgres import get_db
-from app.main import app
-from app.models.user import User, UserRole
+os.environ.setdefault("JWT_SECRET_KEY", "test-only-secret-do-not-use-in-prod")
+
+from app.core.security import hash_password  # noqa: E402
+from app.db.base import Base  # noqa: E402
+from app.db.postgres import get_db  # noqa: E402
+from app.main import app  # noqa: E402
+from app.models.user import User, UserRole  # noqa: E402
 
 engine = create_async_engine("sqlite+aiosqlite:///:memory:", poolclass=None)
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False)

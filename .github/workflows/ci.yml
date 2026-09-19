@@ -8,6 +8,8 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      JWT_SECRET_KEY: ci-only-secret-do-not-use-in-prod
     steps:
       - uses: actions/checkout@v4
 
