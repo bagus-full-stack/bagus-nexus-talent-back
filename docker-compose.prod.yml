@@ -1,0 +1,84 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - cv_storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: celery -A app.tasks.celery_app worker --loglevel=info
+    env_file: .env
+    volumes:
+      - cv_storage:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: celery -A app.tasks.celery_app beat --loglevel=info
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_started
+
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  neo4j:
+    image: neo4j:5
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER}/${NEO4J_PASSWORD}
+    volumes:
+      - neo4j_data:/data
+
+  qdrant:
+    image: qdrant/qdrant
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+
+volumes:
+  postgres_data:
+  neo4j_data:
+  qdrant_data:
+  redis_data:
+  cv_storage:

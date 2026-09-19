@@ -1,0 +1,8 @@
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+# Correctness only (unused/undefined names, syntax errors, bare except, etc.) —
+# no import-sorting or style rules, to keep the lint job meaningful without
+# requiring a repo-wide reformat unrelated to functional bugs.
+select = ["E4", "E7", "E9", "F"]
