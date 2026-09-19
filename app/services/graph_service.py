@@ -6,7 +6,6 @@ from qdrant_client.models import Distance, PointStruct, VectorParams
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.embeddings import EMBEDDING_DIMENSION, get_embedding
 from app.models.synonym import SynonymePaire
 from app.schemas.candidat import CandidatCV
@@ -106,19 +105,13 @@ async def _lookup_synonym(db: AsyncSession, normalized: str, entity_type: str) -
 
 
 async def _llm_disambiguate(label_a: str, label_b: str) -> bool:
-    from openai import OpenAI
+    from app.core.llm import generate_text
 
-    client = OpenAI(api_key=settings.OPENAI_API_KEY)
     prompt = (
         f'Ces deux compétences désignent-elles la même chose : "{label_a}" et "{label_b}" ? '
         "Réponds uniquement par OUI ou NON."
     )
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=5,
-    )
-    answer = (response.choices[0].message.content or "").strip().upper()
+    answer = generate_text(prompt).upper()
     return answer.startswith("OUI")
 
 

@@ -22,8 +22,7 @@ pdf2image==1.17.0
 pytesseract==0.3.13
 langdetect==1.0.9
 gliner==0.2.16
-openai==1.58.1
-anthropic==0.42.0
+google-genai==1.71.0
 pytest==8.3.4
 pytest-asyncio==0.25.0
 httpx==0.28.1

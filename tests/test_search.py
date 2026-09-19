@@ -4,7 +4,7 @@ import pytest
 
 from app.models.cv import CV
 from app.schemas.candidat import CandidatCV, Competence, Diplome
-from app.schemas.search import SyntheseRecherche
+from app.schemas.search import CandidatRecommande, SyntheseRecherche
 from app.services.search_service import TOP_K_LLM_HARD_CAP, _rerank, _synthesize_with_llm, build_candidat_detail
 
 
@@ -60,39 +60,27 @@ def test_anonymisation_masks_identity_fields_but_keeps_competences():
 
 @pytest.mark.asyncio
 async def test_synthesize_with_llm_output_validated_against_schema(monkeypatch):
-    fake_payload = {
-        "candidats_recommandes": [
-            {
-                "candidat_id": "abc123",
-                "justification": "5 ans d'expérience Python confirmés dans le CV",
-                "elements_cites": ["5 ans d'expérience en Python"],
-                "score": 0.9,
-            }
+    fake_payload = SyntheseRecherche(
+        candidats_recommandes=[
+            CandidatRecommande(
+                candidat_id="abc123",
+                justification="5 ans d'expérience Python confirmés dans le CV",
+                elements_cites=["5 ans d'expérience en Python"],
+                score=0.9,
+            )
         ],
-        "resume_synthese": "Un candidat correspond bien à la requête.",
-    }
+        resume_synthese="Un candidat correspond bien à la requête.",
+    )
 
-    class FakeToolUseBlock:
-        type = "tool_use"
-        input = fake_payload
+    def fake_generate_structured(contents, response_schema, system_instruction=None):
+        return fake_payload, {"model": "fake", "prompt_tokens": 1, "completion_tokens": 1}
 
-    class FakeResponse:
-        content = [FakeToolUseBlock()]
+    import app.core.llm
 
-    class FakeMessages:
-        async def create(self, **kwargs):
-            return FakeResponse()
-
-    class FakeAsyncAnthropic:
-        def __init__(self, *args, **kwargs):
-            self.messages = FakeMessages()
-
-    import anthropic
-
-    monkeypatch.setattr(anthropic, "AsyncAnthropic", FakeAsyncAnthropic)
+    monkeypatch.setattr(app.core.llm, "generate_structured", fake_generate_structured)
 
     result = await _synthesize_with_llm("candidats Python", [{"candidat_id": "abc123"}])
 
     assert isinstance(result, SyntheseRecherche)
-    assert result.resume_synthese == fake_payload["resume_synthese"]
+    assert result.resume_synthese == fake_payload.resume_synthese
     assert result.candidats_recommandes[0].candidat_id == "abc123"

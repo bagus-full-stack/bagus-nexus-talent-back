@@ -10,7 +10,7 @@ Backend FastAPI de NexusTalent : recherche de candidats par langage naturel (rec
 - **Qdrant** — recherche vectorielle sur les profils candidats
 - **Redis** — broker/backend Celery, tokens de réinitialisation de mot de passe, stockage du rate limiting
 - **Celery** (worker + beat) — pipeline d'ingestion CV asynchrone, tâches RGPD planifiées
-- **GLiNER** (NER) + **OpenAI/Anthropic** — extraction d'entités et structuration LLM des CV, synthèse des résultats de recherche
+- **GLiNER** (NER) + **Gemini** — extraction d'entités et structuration LLM des CV, synthèse des résultats de recherche, embeddings
 - **JWT** (access + refresh) via `python-jose`, mots de passe hashés avec `bcrypt`
 
 ## Architecture
@@ -136,7 +136,7 @@ Voir `.env.example` pour la liste complète et les commentaires. Points clés :
 | `JWT_ALGORITHM`, `JWT_ACCESS_TOKEN_EXPIRE_MINUTES`, `JWT_REFRESH_TOKEN_EXPIRE_DAYS` | Paramètres des tokens |
 | `CORS_ORIGINS` | Origines frontend autorisées (liste séparée par des virgules), pas de wildcard |
 | `RATE_LIMIT_ENABLED` | Active/désactive le rate limiting (Redis) ; désactivé automatiquement dans les tests |
-| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | Utilisés pour la structuration des CV et la synthèse de recherche |
+| `GEMINI_API_KEY` | Utilisée pour la structuration des CV, l'extraction de filtres, la synthèse de recherche et les embeddings (voir `app/core/llm.py` pour la liste de modèles avec repli automatique) |
 | `CV_STORAGE_DIR` | Répertoire de stockage des fichiers CV uploadés |
 
 ## Authentification & rôles

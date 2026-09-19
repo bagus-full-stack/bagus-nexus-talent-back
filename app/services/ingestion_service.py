@@ -2,15 +2,17 @@ import json
 import logging
 from datetime import date
 from pathlib import Path
+from typing import Literal
 from uuid import UUID
+
+from pydantic import BaseModel, Field
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.models.cv import CV, CVStatus
 from app.models.notification import NotificationType
 from app.models.user import UserRole
-from app.schemas.candidat import CandidatCV, ExperiencePro
+from app.schemas.candidat import CandidatCV, Competence, Diplome, ExperiencePro
 from app.services.notification_service import notifier_roles
 
 logger = logging.getLogger("ingestion")
@@ -20,9 +22,10 @@ CONFIDENCE_THRESHOLD = 0.6
 GLINER_LABELS = ["PERSON", "SKILL", "DEGREE", "ROLE", "COMPANY", "EMAIL", "PHONE", "DATE_RANGE", "LOCATION"]
 MIN_TEXT_LENGTH = 200
 
-# GPT-4o-mini pricing (USD per token), used only for cost logging.
-_PRICE_PER_INPUT_TOKEN = 0.15 / 1_000_000
-_PRICE_PER_OUTPUT_TOKEN = 0.60 / 1_000_000
+# Gemini Flash pricing (USD per token, approximate - the model actually used can
+# vary across the GEMINI_MODELS fallback chain), used only for cost logging.
+_PRICE_PER_INPUT_TOKEN = 0.30 / 1_000_000
+_PRICE_PER_OUTPUT_TOKEN = 2.50 / 1_000_000
 
 _gliner_model = None
 
@@ -101,61 +104,62 @@ def extract_entities(text: str) -> list[dict]:
     return model.predict_entities(text, GLINER_LABELS)
 
 
-# ---- 5. Structuration LLM (GPT-4o-mini, function calling) ------------------
+# ---- 5. Structuration LLM (Gemini, structured output) ----------------------
+
+
+class _ChampConfiance(BaseModel):
+    champ: str
+    confiance: float = Field(ge=0.0, le=1.0)
+
+
+class _CandidatCVLlm(BaseModel):
+    """Miroir de CandidatCV pour l'appel LLM : `source_confiance` est une liste de
+    paires plutôt qu'un dict, car Gemini structured output rejette les objets à
+    clés libres (additionalProperties non supporté)."""
+
+    nom: str | None = None
+    prenom: str | None = None
+    email: str | None = None
+    telephone: str | None = None
+    localisation: str | None = None
+    langue_detectee: str | None = None
+    disponible_a_partir_de: date | None = None
+    competences: list[Competence] = Field(default_factory=list)
+    diplomes: list[Diplome] = Field(default_factory=list)
+    experiences: list[ExperiencePro] = Field(default_factory=list)
+    annees_experience_cumulees: float | None = None
+    source_confiance: list[_ChampConfiance] = Field(default_factory=list)
+    statut_qualite: Literal["ok", "a_valider", "echec_parsing"] = "a_valider"
+    champs_a_verifier: list[str] = Field(default_factory=list)
+
 
 def structure_with_llm(text: str, entities: list[dict]) -> tuple[CandidatCV, dict]:
-    """Structures raw text + NER hints into a CandidatCV via GPT-4o-mini function calling.
-    Retries once (2 attempts total) if the response fails Pydantic validation."""
-    from openai import OpenAI
+    """Structures raw text + NER hints into a CandidatCV via Gemini structured output.
+    Retries once (2 attempts total) if the response fails schema validation."""
+    from app.core.llm import generate_structured
 
-    client = OpenAI(api_key=settings.OPENAI_API_KEY)
-    schema = CandidatCV.model_json_schema()
     entities_hint = json.dumps(entities, ensure_ascii=False)
-
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "Tu extrais les informations structurées d'un CV. Utilise les entités déjà "
-                "détectées comme indices mais vérifie-les dans le texte complet. Attribue un "
-                "score de confiance (0 à 1) à chaque champ obligatoire extrait dans `source_confiance`."
-            ),
-        },
-        {"role": "user", "content": f"Entités détectées (NER) :\n{entities_hint}\n\nTexte du CV :\n{text}"},
-    ]
+    system_instruction = (
+        "Tu extrais les informations structurées d'un CV. Utilise les entités déjà "
+        "détectées comme indices mais vérifie-les dans le texte complet. Attribue un "
+        "score de confiance (0 à 1) à chaque champ obligatoire extrait dans `source_confiance`."
+    )
+    prompt = f"Entités détectées (NER) :\n{entities_hint}\n\nTexte du CV :\n{text}"
 
     last_error: Exception | None = None
     for _ in range(2):
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=messages,
-            tools=[
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "structurer_cv",
-                        "description": "Structure les données d'un CV selon le schéma CandidatCV",
-                        "parameters": schema,
-                    },
-                }
-            ],
-            tool_choice={"type": "function", "function": {"name": "structurer_cv"}},
-        )
-        usage = response.usage
-        tool_call = response.choices[0].message.tool_calls[0]
         try:
-            candidat = CandidatCV.model_validate_json(tool_call.function.arguments)
-            return candidat, {
-                "prompt_tokens": usage.prompt_tokens,
-                "completion_tokens": usage.completion_tokens,
-            }
-        except Exception as exc:  # pydantic ValidationError
+            llm_result, usage = generate_structured(prompt, _CandidatCVLlm, system_instruction)
+            candidat = CandidatCV(
+                **llm_result.model_dump(exclude={"source_confiance"}),
+                source_confiance={c.champ: c.confiance for c in llm_result.source_confiance},
+            )
+            return candidat, usage
+        except Exception as exc:  # pydantic ValidationError or Gemini failure
             last_error = exc
-            messages.append(
-                {
-                    "role": "user",
-                    "content": f"La réponse précédente ne respecte pas le schéma ({exc}). Corrige et renvoie un JSON valide.",
-                }
+            prompt += (
+                f"\n\n(La réponse précédente ne respecte pas le schéma ({exc}). "
+                "Corrige et renvoie un JSON valide.)"
             )
 
     raise ValueError(f"Échec de structuration LLM après 2 tentatives: {last_error}")
@@ -170,7 +174,7 @@ def log_llm_cost(cv_id: UUID, usage: dict) -> None:
             {
                 "event": "llm_cost",
                 "cv_id": str(cv_id),
-                "model": "gpt-4o-mini",
+                "model": usage.get("model", "gemini"),
                 "prompt_tokens": usage["prompt_tokens"],
                 "completion_tokens": usage["completion_tokens"],
                 "cost_usd": round(cost_usd, 6),

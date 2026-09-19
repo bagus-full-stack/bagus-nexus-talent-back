@@ -6,7 +6,6 @@ from qdrant_client import AsyncQdrantClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.core.embeddings import get_embedding
 from app.models.app_settings import ParametresGlobaux
 from app.models.cv import CV, CVStatus
@@ -29,41 +28,19 @@ class _FiltresExtraction(FiltresRecherche):
 # ---- Self-querying : extraction des filtres stricts -------------------------
 
 def extract_filters(query: str) -> tuple[FiltresRecherche, str]:
-    """Calls an LLM (function calling) to split the query into strict FiltresRecherche
+    """Calls Gemini (structured output) to split the query into strict FiltresRecherche
     plus the residual free-text part destined to vector search. Falls back to an
     empty filter set (unfiltered query) on any LLM/validation failure."""
     try:
-        from openai import OpenAI
+        from app.core.llm import generate_structured
 
-        client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Tu extrais les filtres stricts d'une requête de recherche de candidats "
-                        "(expérience minimale, compétences requises, diplôme minimal, langues, "
-                        "localisation, disponibilité). Renvoie aussi `requete_residuelle` : la "
-                        "requête débarrassée de ces critères, destinée à une recherche sémantique."
-                    ),
-                },
-                {"role": "user", "content": query},
-            ],
-            tools=[
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "extraire_filtres",
-                        "description": "Extrait les filtres stricts et la requête résiduelle",
-                        "parameters": _FiltresExtraction.model_json_schema(),
-                    },
-                }
-            ],
-            tool_choice={"type": "function", "function": {"name": "extraire_filtres"}},
+        system_instruction = (
+            "Tu extrais les filtres stricts d'une requête de recherche de candidats "
+            "(expérience minimale, compétences requises, diplôme minimal, langues, "
+            "localisation, disponibilité). Renvoie aussi `requete_residuelle` : la "
+            "requête débarrassée de ces critères, destinée à une recherche sémantique."
         )
-        tool_call = response.choices[0].message.tool_calls[0]
-        extraction = _FiltresExtraction.model_validate_json(tool_call.function.arguments)
+        extraction, _usage = generate_structured(query, _FiltresExtraction, system_instruction)
         filtres = FiltresRecherche(**extraction.model_dump(exclude={"requete_residuelle"}))
         return filtres, extraction.requete_residuelle
     except Exception:
@@ -208,42 +185,21 @@ def _build_llm_context(ranked: list[dict], pool_by_id: dict[str, CandidatCV], gr
 
 
 async def _synthesize_with_llm(query: str, context: list[dict]) -> SyntheseRecherche:
-    from anthropic import AsyncAnthropic
+    from app.core.llm import generate_structured
 
-    client = AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
-    system_prompt = (
+    system_instruction = (
         "Tu es un assistant de recrutement. À partir des CV fournis en contexte, recommande les "
         "candidats les plus pertinents pour la requête. Pour chaque candidat recommandé, cite "
         "explicitement dans `elements_cites` les passages ou informations du CV qui justifient ton "
         "choix. N'invente JAMAIS d'information absente des CV fournis : si une information manque, "
         "ne l'affirme pas."
     )
-
-    response = await client.messages.create(
-        model="claude-3-5-sonnet-20241022",
-        max_tokens=4096,
-        system=system_prompt,
-        messages=[
-            {
-                "role": "user",
-                "content": f"Requête : {query}\n\nCandidats (JSON) :\n"
-                f"{json.dumps(context, ensure_ascii=False, default=str)}",
-            }
-        ],
-        tools=[
-            {
-                "name": "presenter_resultats",
-                "description": "Présente les candidats recommandés",
-                "input_schema": SyntheseRecherche.model_json_schema(),
-            }
-        ],
-        tool_choice={"type": "tool", "name": "presenter_resultats"},
+    prompt = (
+        f"Requête : {query}\n\nCandidats (JSON) :\n{json.dumps(context, ensure_ascii=False, default=str)}"
     )
 
-    for block in response.content:
-        if block.type == "tool_use":
-            return SyntheseRecherche.model_validate(block.input)
-    raise ValueError("Le LLM n'a pas renvoyé de résultat structuré")
+    synthese, _usage = generate_structured(prompt, SyntheseRecherche, system_instruction)
+    return synthese
 
 
 # ---- Paramètres globaux (singleton) ------------------------------------------
