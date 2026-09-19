@@ -4,6 +4,8 @@ from uuid import UUID
 from app.tasks.celery_app import celery_app
 
 
+# Registered only because app/tasks/celery_app.py imports this module explicitly.
+# New task modules must be added to that import list too, or the worker never sees them.
 @celery_app.task(name="graph.index_candidat")
 def index_candidat_task(cv_id: str) -> None:
     from app.db.neo4j import driver as neo4j_driver

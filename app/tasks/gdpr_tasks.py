@@ -3,6 +3,8 @@ import asyncio
 from app.tasks.celery_app import celery_app
 
 
+# Registered only because app/tasks/celery_app.py imports this module explicitly.
+# New task modules must be added to that import list too, or the worker never sees them.
 @celery_app.task(name="gdpr.nettoyer_entites_orphelines")
 def nettoyer_entites_orphelines_task() -> int:
     from app.db.neo4j import driver as neo4j_driver

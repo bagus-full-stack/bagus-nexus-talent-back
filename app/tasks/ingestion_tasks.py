@@ -14,6 +14,8 @@ def preload_gliner_model(**kwargs) -> None:
     get_gliner_model()
 
 
+# Registered only because app/tasks/celery_app.py imports this module explicitly.
+# New task modules must be added to that import list too, or the worker never sees them.
 @celery_app.task(name="ingestion.process_cv")
 def process_cv_task(cv_id: str) -> None:
     from app.db.postgres import SessionLocal
@@ -26,6 +28,7 @@ def process_cv_task(cv_id: str) -> None:
     asyncio.run(_run())
 
 
+# Registered only because app/tasks/celery_app.py imports this module explicitly.
 @celery_app.task(name="ingestion.trigger_indexing")
 def trigger_indexing(cv_id: str) -> None:
     from app.tasks.entity_resolution_tasks import index_candidat_task

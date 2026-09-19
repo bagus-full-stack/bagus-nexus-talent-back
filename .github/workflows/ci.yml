@@ -31,6 +31,27 @@ jobs:
       - name: Run tests
         run: pytest -q
 
+      - name: Start a real Celery worker (separate process from this CI step)
+        run: |
+          celery -A app.tasks.celery_app worker --loglevel=info --pool=solo &
+          echo $! > celery_worker.pid
+          for i in $(seq 1 20); do
+            celery -A app.tasks.celery_app inspect ping -t 2 && break
+            sleep 1
+          done
+
+      - name: Dispatch a real task end-to-end (fails with NotRegistered if registration breaks)
+        run: |
+          python -c "
+          from app.tasks.gdpr_tasks import nettoyer_entites_orphelines_task
+          removed = nettoyer_entites_orphelines_task.delay().get(timeout=10)
+          print(f'Task executed successfully by the worker, removed={removed}')
+          "
+
+      - name: Stop Celery worker
+        if: always()
+        run: kill "$(cat celery_worker.pid)" 2>/dev/null || true
+
       - name: Stop service containers
         if: always()
         run: docker compose down -v
