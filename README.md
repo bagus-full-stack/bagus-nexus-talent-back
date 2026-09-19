@@ -59,15 +59,30 @@ tests/         suite pytest (async, httpx + sqlite in-memory)
 ```bash
 # 1. Dépendances Python
 python -m venv .venv
-source .venv/Scripts/activate   # .venv/bin/activate sous macOS/Linux
+source .venv/Scripts/activate   # .venv/bin/activate sous macOS/Linux ; .venv\Scripts\Activate.ps1 sous Windows PowerShell
 pip install -r requirements.txt
 
-# 2. Services d'infrastructure
+# 2. Services d'infrastructure (Postgres, Neo4j, Qdrant, Redis)
+# docker-compose.yml ne contient QUE l'infra, pas l'API : c'est volontaire, pour
+# lancer l'API en local avec rechargement à chaud plutôt que de rebuilder une image
+# Docker à chaque changement. Pour tout lancer en Docker, voir "Déploiement" plus bas.
 docker compose up -d
 
 # 3. Variables d'environnement
 cp .env.example .env
-# éditer .env : au minimum JWT_SECRET_KEY (voir commande de génération dans le fichier)
+# .env.example est écrit pour docker-compose.prod.yml (hosts = noms de service :
+# "postgres", "neo4j", "qdrant", "redis"). Pour une API lancée en local (hors
+# Docker) contre l'infra de dev ci-dessus, utiliser "localhost" à la place, avec
+# les identifiants codés en dur dans docker-compose.yml :
+#   DATABASE_URL=postgresql+asyncpg://nexustalent:nexustalent@localhost:5432/nexustalent
+#   NEO4J_URI=bolt://localhost:7687
+#   NEO4J_USER=neo4j
+#   NEO4J_PASSWORD=neo4jpassword
+#   QDRANT_URL=http://localhost:6333
+#   REDIS_URL=redis://localhost:6379/0
+# (ce sont d'ailleurs les valeurs par défaut de Settings() dans app/core/config.py,
+# donc ces lignes peuvent aussi simplement être supprimées de .env).
+# Seul JWT_SECRET_KEY est obligatoire (voir commande de génération dans le fichier).
 
 # 4. Migrations de base de données
 alembic upgrade head
@@ -81,7 +96,14 @@ celery -A app.tasks.celery_app worker --loglevel=info
 celery -A app.tasks.celery_app beat --loglevel=info
 ```
 
-L'API est servie sur `http://localhost:8000`, la documentation interactive sur `http://localhost:8000/docs`.
+L'API est servie sur `http://localhost:8000`, la documentation interactive sur `http://localhost:8000/docs`. Vérifier qu'elle répond : `curl http://localhost:8000/health`.
+
+**Windows / PowerShell** : si `uvicorn` n'est pas reconnu après l'étape 1, c'est que le venv n'est pas activé dans le terminal courant. Deux options :
+```powershell
+.venv\Scripts\Activate.ps1        # puis lancer les commandes normalement
+# ou, sans activer (si la politique d'exécution de scripts bloque Activate.ps1) :
+.venv\Scripts\uvicorn.exe app.main:app --reload
+```
 
 ## Déploiement (Docker Compose prod)
 
