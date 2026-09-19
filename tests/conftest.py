@@ -7,6 +7,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 os.environ.setdefault("JWT_SECRET_KEY", "test-only-secret-do-not-use-in-prod")
+os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
 
 from app.core.security import hash_password  # noqa: E402
 from app.db.base import Base  # noqa: E402

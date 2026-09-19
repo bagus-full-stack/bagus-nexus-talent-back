@@ -25,5 +25,18 @@ class Settings(BaseSettings):
 
     CV_STORAGE_DIR: str = "storage/cvs"
 
+    # Comma-separated list of allowed frontend origins. No wildcard: it cannot be
+    # combined with allow_credentials=True (browsers reject it, and it would allow
+    # any site to call the API with a logged-in user's credentials).
+    CORS_ORIGINS: str = "http://localhost:3000"
+
+    # Off by default in tests (see tests/conftest.py) so suites that log in
+    # repeatedly don't trip the /auth/login limit; on everywhere else.
+    RATE_LIMIT_ENABLED: bool = True
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+
 
 settings = Settings()
