@@ -105,6 +105,16 @@ L'API est servie sur `http://localhost:8000`, la documentation interactive sur `
 .venv\Scripts\uvicorn.exe app.main:app --reload
 ```
 
+### Premier utilisateur admin
+
+Aucune migration ne crée de compte par défaut — la table `users` est vide au premier lancement. `create_admin.py` crée un compte admin :
+
+```bash
+python create_admin.py
+```
+
+Identifiants créés : `admin@nexustalent.app` / `bagus_admin` (modifiables en tête du fichier avant exécution — éviter les TLD réservés comme `.local`, `.internal`, `.test` : rejetés par la validation d'email de l'API). Le script est idempotent : le relancer avec le même email ne fait rien s'il existe déjà. Nécessite `.env` déjà configuré et Postgres accessible.
+
 ## Déploiement (Docker Compose prod)
 
 ```bash

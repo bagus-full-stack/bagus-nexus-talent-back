@@ -29,9 +29,13 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     mot_de_passe_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[UserRole] = mapped_column(
-        Enum(UserRole, name="user_role"), default=UserRole.RECRUTEUR, nullable=False
+        Enum(UserRole, name="user_role", values_callable=lambda enum_cls: [e.value for e in enum_cls]),
+        default=UserRole.RECRUTEUR,
+        nullable=False,
     )
     statut: Mapped[UserStatus] = mapped_column(
-        Enum(UserStatus, name="user_status"), default=UserStatus.ACTIF, nullable=False
+        Enum(UserStatus, name="user_status", values_callable=lambda enum_cls: [e.value for e in enum_cls]),
+        default=UserStatus.ACTIF,
+        nullable=False,
     )
     date_creation: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

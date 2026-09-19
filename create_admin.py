@@ -6,7 +6,7 @@ from app.core.security import hash_password
 from app.db.postgres import SessionLocal
 from app.models.user import User, UserRole, UserStatus
 
-ADMIN_EMAIL = "admin@nexustalent.local"
+ADMIN_EMAIL = "admin@nexustalent.app"
 ADMIN_PASSWORD = "bagus_admin"
 
 
